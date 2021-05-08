@@ -18,7 +18,7 @@ provider "hcloud" {
 
 resource "hcloud_ssh_key" "default" {
   name = var.ssh_public_key_name
-  public_key = file(var.ssh_public_key)
+  public_key = var.ssh_public_key
 }
 
 resource "hcloud_network" "default" {
