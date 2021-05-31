@@ -1,0 +1,80 @@
+---
+  - name: Install openshift python package
+    pip:
+      name: openshift
+  - name: Create CCM Secret
+    community.kubernetes.k8s:
+      state: present
+      definition: 
+        apiVersion: v1
+        kind: Secret            
+        metadata:
+          name: hcloud
+          namespace: kube-system
+        stringData:
+          token: "{{ hetzner_token }}"
+          network: "{{ hetzner_network_id }}"
+  
+  - name: Create CSI Secret
+    community.kubernetes.k8s:
+      state: present
+      definition: 
+        apiVersion: v1
+        kind: Secret            
+        metadata:
+          name: hcloud-csi
+          namespace: kube-system
+        stringData:
+          token: "{{ hetzner_token }}"
+  
+  - name: Create CSI temporary file
+    ansible.builtin.tempfile:
+      state: file
+    register: tempfile_csi_yml
+
+  # Download and apply manifest
+  - name: Download CSI manifests to remote server.
+    ansible.builtin.get_url:
+      url: https://raw.githubusercontent.com/hetznercloud/csi-driver/master/deploy/kubernetes/hcloud-csi.yml
+      dest: "{{tempfile_csi_yml.path}}"
+      mode: '0664'
+
+  - name: Apply CSI manifests to the cluster.
+    community.kubernetes.k8s:
+      state: present
+      src: "{{tempfile_csi_yml.path}}"
+
+  - name: Remove CSI manifests temporal file
+    ansible.builtin.file:
+      path: "{{ tempfile_csi_yml.path }}"
+      state: absent
+    when: tempfile_csi_yml.path is defined
+
+  - name: Create CCM temporary file
+    ansible.builtin.tempfile:
+      state: file
+    register: tempfile_ccm_yml
+
+  # Download CCM
+  - name: Download CCM manifests to remote server.
+    ansible.builtin.get_url:
+      url: https://github.com/hetznercloud/hcloud-cloud-controller-manager/releases/latest/download/ccm-networks.yaml
+      dest: "{{tempfile_ccm_yml.path}}"
+      mode: '0664'
+
+  - name: Set CLuster CIDR in CCM Manifest
+    replace:
+      dest="{{tempfile_ccm_yml.path}}"
+      regexp="(?<=--cluster-cidr=)([0-9\.\/]*)"
+      replace="{{ network_cidr }}"
+
+  - name: Apply CCM manifests to the cluster.
+    community.kubernetes.k8s:
+      state: present
+      src: "{{tempfile_ccm_yml.path}}"
+  
+  - name: Remove CCM manifests temporal file
+    ansible.builtin.file:
+      path: "{{ tempfile_ccm_yml.path }}"
+      state: absent
+    when: tempfile_ccm_yml.path is defined
